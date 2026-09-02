@@ -1,0 +1,41 @@
+name: chat-alpha-media
+
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: chat-alpha-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    networks:
+      - chat-alpha-network
+
+  postgres-media:
+    image: postgres:16
+    container_name: chat-alpha-media-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: chat_alpha_media
+    ports:
+      - "5434:5432"
+    volumes:
+      - media_pgdata:/var/lib/postgresql/data
+    networks:
+      - chat-alpha-network
+
+volumes:
+  miniodata:
+  media_pgdata:
+
+networks:
+  chat-alpha-network:
+    external: true

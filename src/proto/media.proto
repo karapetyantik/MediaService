@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package media;
+
+service MediaInternal {
+  rpc VerifyMedia (VerifyMediaRequest) returns (VerifyMediaResponse);
+}
+
+message VerifyMediaRequest {
+  string mediaId = 1;
+  string uploaderId = 2;
+}
+
+message VerifyMediaResponse {
+  bool valid = 1;
+  string url = 2;
+  string mimeType = 3;
+}
