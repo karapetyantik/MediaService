@@ -25,6 +25,12 @@ export class GrpcMediaController {
     }
 
     const url = await this.s3Service.getDownloadUrl(file.objectKey);
-    return { valid: true, url, mimeType: file.mimeType };
+    const variants = file.variants as { placeholder?: string } | null;
+    return {
+      valid: true,
+      url,
+      mimeType: file.mimeType,
+      placeholder: variants?.placeholder ?? '',
+    };
   }
 }

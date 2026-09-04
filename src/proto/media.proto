@@ -15,4 +15,5 @@ message VerifyMediaResponse {
   bool valid = 1;
   string url = 2;
   string mimeType = 3;
+  string placeholder = 4;
 }

@@ -26,6 +26,20 @@ import { MediaEventsController } from './media-events.controller';
         inject: [ConfigService],
       },
     ]),
+    ClientsModule.registerAsync([
+      {
+        name: 'USER_EVENTS_SERVICE',
+        useFactory: (config: ConfigService) => ({
+          transport: Transport.RMQ,
+          options: {
+            urls: [config.getOrThrow<string>('RABBITMQ_URL')],
+            queue: 'user_events',
+            queueOptions: { durable: true },
+          },
+        }),
+        inject: [ConfigService],
+      },
+    ]),
   ],
   providers: [MediaService],
   controllers: [MediaController, MediaEventsController, GrpcMediaController],

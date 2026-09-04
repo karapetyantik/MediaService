@@ -16,8 +16,10 @@ import { ConfirmUploadDto } from '../dto/confirm-upload.dto';
 export class MediaService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly s3: S3Service,
+    private readonly s3Service: S3Service,
     @Inject('RABBITMQ_SERVICE') private readonly rabbitClient: ClientProxy,
+    @Inject('USER_EVENTS_SERVICE')
+    private readonly userEventsClient: ClientProxy,
   ) {}
 
   async requestUpload(uploaderId: string, dto: RequestUploadDto) {
@@ -37,7 +39,10 @@ export class MediaService {
       },
     });
 
-    const uploadUrl = await this.s3.getUploadUrl(objectKey, dto.mimeType);
+    const uploadUrl = await this.s3Service.getUploadUrl(
+      objectKey,
+      dto.mimeType,
+    );
     return { mediaId, uploadUrl, objectKey };
   }
 
@@ -65,11 +70,34 @@ export class MediaService {
       );
     }
 
-    const { exists, sizeBytes } = await this.s3.checkObjectExists(
+    const { exists, sizeBytes, etag } = await this.s3Service.checkObjectExists(
       file.objectKey,
     );
     if (!exists)
       throw new BadRequestException('Файл ещё не загружен в хранилище');
+
+    if (etag) {
+      const existing = await this.prisma.mediaFile.findFirst({
+        where: {
+          uploaderId,
+          contentHash: etag,
+          status: 'confirmed',
+          id: { not: mediaId },
+        },
+      });
+
+      if (existing) {
+        await this.prisma.mediaFile.delete({ where: { id: mediaId } });
+        // await this.s3Service.deleteObject(file.objectKey); // Если реализован метод удаления в S3
+
+        return {
+          mediaId: existing.id,
+          url: await this.s3Service.getDownloadUrl(existing.objectKey),
+          status: 'confirmed',
+          reused: true,
+        };
+      }
+    }
 
     const updated = await this.prisma.mediaFile.update({
       where: { id: mediaId },
@@ -77,13 +105,14 @@ export class MediaService {
         status: 'confirmed',
         confirmedAt: new Date(),
         sizeBytes,
+        contentHash: etag,
         cropX: dto.cropX,
         cropY: dto.cropY,
         cropSize: dto.cropSize,
       },
     });
 
-    const downloadUrl = await this.s3.getDownloadUrl(file.objectKey);
+    const downloadUrl = await this.s3Service.getDownloadUrl(file.objectKey);
 
     this.rabbitClient.emit('file.uploaded', {
       mediaId,
@@ -104,9 +133,17 @@ export class MediaService {
   }
 
   async saveVariants(mediaId: string, variants: Record<string, string>) {
-    await this.prisma.mediaFile.update({
+    const file = await this.prisma.mediaFile.update({
       where: { id: mediaId },
       data: { variants },
     });
+
+    if (file.purpose === 'avatar' && variants.avatar) {
+      const avatarUrl = `http://localhost:9000/chat-alpha-avatars/${variants.avatar}`;
+      this.userEventsClient.emit('avatar.updated', {
+        userId: file.uploaderId,
+        avatarUrl,
+      });
+    }
   }
 }

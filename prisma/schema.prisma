@@ -7,18 +7,19 @@ datasource db {
 }
 
 model MediaFile {
-  id           String   @id @default(uuid())
-  uploaderId   String
-  objectKey    String   @unique
-  fileName     String
-  mimeType     String
-  sizeBytes    Int?
-  status       String   @default("pending")
-  variants     Json?
-  purpose      String @default("attachment")
-  cropX        Int?
-  cropY        Int?
-  cropSize     Int?
-  createdAt    DateTime @default(now())
-  confirmedAt  DateTime?
+  id          String    @id @default(uuid())
+  uploaderId  String
+  objectKey   String    @unique
+  fileName    String
+  mimeType    String
+  contentHash String?
+  sizeBytes   Int?
+  status      String    @default("pending")
+  variants    Json?
+  purpose     String    @default("attachment")
+  cropX       Int?
+  cropY       Int?
+  cropSize    Int?
+  createdAt   DateTime  @default(now())
+  confirmedAt DateTime?
 }

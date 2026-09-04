@@ -38,12 +38,16 @@ export class S3Service {
 
   async checkObjectExists(
     objectKey: string,
-  ): Promise<{ exists: boolean; sizeBytes?: number }> {
+  ): Promise<{ exists: boolean; sizeBytes?: number; etag?: string }> {
     try {
       const result = await this.client.send(
         new HeadObjectCommand({ Bucket: this.bucket, Key: objectKey }),
       );
-      return { exists: true, sizeBytes: result.ContentLength };
+      return {
+        exists: true,
+        sizeBytes: result.ContentLength,
+        etag: result.ETag ? result.ETag.replace(/"/g, '') : undefined,
+      };
     } catch {
       return { exists: false };
     }
