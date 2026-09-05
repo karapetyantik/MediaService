@@ -76,19 +76,20 @@ export class MediaService {
     if (!exists)
       throw new BadRequestException('Файл ещё не загружен в хранилище');
 
-    if (etag) {
+    if (etag && file.purpose !== 'avatar') {
       const existing = await this.prisma.mediaFile.findFirst({
         where: {
           uploaderId,
           contentHash: etag,
           status: 'confirmed',
+          purpose: file.purpose,
           id: { not: mediaId },
         },
       });
 
       if (existing) {
         await this.prisma.mediaFile.delete({ where: { id: mediaId } });
-        // await this.s3Service.deleteObject(file.objectKey); // Если реализован метод удаления в S3
+        await this.s3Service.deleteObject(file.objectKey);
 
         return {
           mediaId: existing.id,
