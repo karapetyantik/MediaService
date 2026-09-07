@@ -3,7 +3,7 @@ import { MediaService } from './media.service';
 import { MediaController } from './media.controller';
 import { ConfigService } from '@nestjs/config';
 import { ClientsModule, Transport } from '@nestjs/microservices';
-import { PrismaModule } from 'src/common/prisma/prisma.module';
+import { PrismaModule } from '@common/prisma/prisma.module';
 import { S3Module } from '../s3/s3.module';
 import { GrpcMediaController } from './grpc-media/grpc-media.controller';
 import { MediaEventsController } from './media-events.controller';

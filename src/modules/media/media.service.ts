@@ -1,22 +1,32 @@
 import {
   Injectable,
   Inject,
+  Logger,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { extname } from 'path';
 import { ClientProxy } from '@nestjs/microservices';
-import { PrismaService } from 'src/common/prisma/prisma.service';
+import { ConfigService } from '@nestjs/config';
+import { fromBuffer as detectFileType } from 'file-type';
+import { PrismaService } from '@common/prisma/prisma.service';
 import { S3Service } from '../s3/s3.service';
 import { RequestUploadDto } from '../dto/request-upload.dto';
 import { ConfirmUploadDto } from '../dto/confirm-upload.dto';
+import { MAX_UPLOAD_BYTES } from './upload-limits';
+
+const CONTENT_SNIFF_BYTES = 4100;
+const UNVERIFIABLE_MIME_TYPE = 'application/octet-stream';
 
 @Injectable()
 export class MediaService {
+  private readonly logger = new Logger(MediaService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly s3Service: S3Service,
+    private readonly config: ConfigService,
     @Inject('RABBITMQ_SERVICE') private readonly rabbitClient: ClientProxy,
     @Inject('USER_EVENTS_SERVICE')
     private readonly userEventsClient: ClientProxy,
@@ -76,6 +86,19 @@ export class MediaService {
     if (!exists)
       throw new BadRequestException('Файл ещё не загружен в хранилище');
 
+    if (sizeBytes !== undefined && sizeBytes > MAX_UPLOAD_BYTES) {
+      await this.rejectUpload(mediaId, file.objectKey);
+      throw new BadRequestException(
+        `Файл превышает максимально допустимый размер (${MAX_UPLOAD_BYTES} байт)`,
+      );
+    }
+
+    await this.assertContentMatchesDeclaredType(
+      mediaId,
+      file.objectKey,
+      file.mimeType,
+    );
+
     if (etag && file.purpose !== 'avatar') {
       const existing = await this.prisma.mediaFile.findFirst({
         where: {
@@ -88,8 +111,11 @@ export class MediaService {
       });
 
       if (existing) {
-        await this.prisma.mediaFile.delete({ where: { id: mediaId } });
+        // Delete the S3 object before the DB row: if S3 delete fails, the
+        // DB row survives to point at a real (if duplicate) object rather
+        // than an untracked orphan sitting silently in the bucket forever.
         await this.s3Service.deleteObject(file.objectKey);
+        await this.prisma.mediaFile.delete({ where: { id: mediaId } });
 
         return {
           mediaId: existing.id,
@@ -140,11 +166,58 @@ export class MediaService {
     });
 
     if (file.purpose === 'avatar' && variants.avatar) {
-      const avatarUrl = `http://localhost:9000/chat-alpha-avatars/${variants.avatar}`;
       this.userEventsClient.emit('avatar.updated', {
         userId: file.uploaderId,
-        avatarUrl,
+        avatarUrl: this.buildAvatarUrl(variants.avatar),
       });
     }
+  }
+
+  private buildAvatarUrl(objectKey: string): string {
+    const endpoint = this.config.getOrThrow<string>('MINIO_ENDPOINT');
+    const port = this.config.getOrThrow<string>('MINIO_PORT');
+    const bucket = this.config.getOrThrow<string>('AVATAR_BUCKET');
+    return `http://${endpoint}:${port}/${bucket}/${objectKey}`;
+  }
+
+  /**
+   * Rejects a mimeType that is client-declared metadata, never verified
+   * against the actual bytes, by sniffing the real file signature. Skips
+   * generic/unknown uploads (application/octet-stream) since there's
+   * nothing to contradict, and only rejects on a confirmed mismatch — a
+   * failed/ambiguous detection is not treated as a violation, to avoid
+   * false positives on legitimate edge-case files.
+   */
+  private async assertContentMatchesDeclaredType(
+    mediaId: string,
+    objectKey: string,
+    declaredMimeType: string,
+  ): Promise<void> {
+    if (declaredMimeType === UNVERIFIABLE_MIME_TYPE) {
+      return;
+    }
+
+    const head = await this.s3Service.readHeadBytes(
+      objectKey,
+      CONTENT_SNIFF_BYTES,
+    );
+    const detected = await detectFileType(head);
+
+    if (detected && detected.mime !== declaredMimeType) {
+      this.logger.warn(
+        `Заявленный тип ${declaredMimeType} не совпадает с фактическим ${detected.mime} для ${objectKey}`,
+      );
+      await this.rejectUpload(mediaId, objectKey);
+      throw new BadRequestException(
+        'Содержимое файла не соответствует заявленному типу',
+      );
+    }
+  }
+
+  private async rejectUpload(mediaId: string, objectKey: string) {
+    await this.s3Service.deleteObject(objectKey);
+    await this.prisma.mediaFile
+      .delete({ where: { id: mediaId } })
+      .catch(() => undefined);
   }
 }

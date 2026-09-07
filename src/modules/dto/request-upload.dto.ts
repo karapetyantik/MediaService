@@ -5,7 +5,9 @@ import {
   IsOptional,
   IsInt,
   Min,
+  Max,
 } from 'class-validator';
+import { MAX_UPLOAD_BYTES } from '../media/upload-limits';
 
 export class RequestUploadDto {
   @IsString()
@@ -27,8 +29,10 @@ export class RequestUploadDto {
   ])
   mimeType!: string;
 
-  @IsOptional()
+  // Client-declared size — advisory only, the authoritative check happens
+  // against the actual uploaded object size in confirmUpload().
   @IsInt()
   @Min(1)
-  sizeBytes?: number;
+  @Max(MAX_UPLOAD_BYTES)
+  sizeBytes!: number;
 }

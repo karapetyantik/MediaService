@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   S3Client,
-  PutObjectAclCommand,
   HeadObjectCommand,
   PutObjectCommand,
   GetObjectCommand,
@@ -66,5 +65,21 @@ export class S3Service {
     await this.client.send(
       new DeleteObjectCommand({ Bucket: this.bucket, Key: objectKey }),
     );
+  }
+
+  /** Reads the first `byteLength` bytes of an object — enough for magic-byte content sniffing. */
+  async readHeadBytes(objectKey: string, byteLength: number): Promise<Buffer> {
+    const result = await this.client.send(
+      new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: objectKey,
+        Range: `bytes=0-${byteLength - 1}`,
+      }),
+    );
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of result.Body as AsyncIterable<Uint8Array>) {
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks);
   }
 }

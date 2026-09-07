@@ -1,8 +1,10 @@
-import { Controller } from '@nestjs/common';
+import { Controller, UseGuards } from '@nestjs/common';
 import { GrpcMethod } from '@nestjs/microservices';
-import { PrismaService } from 'src/common/prisma/prisma.service';
-import { S3Service } from 'src/modules/s3/s3.service';
+import { PrismaService } from '@common/prisma/prisma.service';
+import { S3Service } from '@modules/s3/s3.service';
+import { InternalGrpcAuthGuard } from './internal-grpc-auth.guard';
 
+@UseGuards(InternalGrpcAuthGuard)
 @Controller()
 export class GrpcMediaController {
   constructor(
